@@ -5,11 +5,11 @@ import matplotlib.patches as mpatches
 import math
 
 
-def sample_generator(size):
+def noise_sample(size):
     return torch.rand(size, dtype=torch.float)
 
 
-def sample_data(size, mean=0, std=1):
+def data_sample(size, mean=0, std=1):
     mean = torch.ones(size, dtype=torch.float) * torch.tensor(mean, dtype=torch.float)
     std = torch.ones(size, dtype=torch.float) * torch.tensor(std, dtype=torch.float)
     return torch.normal(mean, std)
@@ -67,8 +67,8 @@ class PlotDistributions:
         with torch.no_grad():
             X, G_Z = [], []
             sample_size = (self.num_samples, 1)
-            x = sample_data(sample_size, mean=self.mean, std=self.std).to(self.device)
-            z = sample_generator(sample_size).to(self.device)
+            x = data_sample(sample_size, mean=self.mean, std=self.std).to(self.device)
+            z = noise_sample(sample_size).to(self.device)
             g_z = g_model(z)
 
             X = x.cpu().numpy()
@@ -155,11 +155,9 @@ if __name__ == "__main__":
     for epoch in range(num_epochs):
         # Descriminator training loop
         for d_step in range(d_steps):
-            # --------------------------------------------------------------------------
-            # Train the descriminator on correct data
-            # --------------------------------------------------------------------------
+            # Train the descriminator on correct data:
             # 1. Get data sampled from the real distribution
-            x = sample_data(d_sample_size, mean=mean, std=std).to(device)
+            x = data_sample(d_sample_size, mean=mean, std=std).to(device)
 
             # 2. Forward propagation
             d_model.zero_grad()
@@ -171,11 +169,9 @@ if __name__ == "__main__":
             loss_real = criterion(output, y)
             loss_real.backward()
 
-            # --------------------------------------------------------------------------
-            # Train the descriminator on data from the generator
-            # --------------------------------------------------------------------------
+            # Train the descriminator on data from the generator:
             # 1. Get data from the generator using noise
-            z = sample_generator(d_sample_size).to(device)
+            z = noise_sample(d_sample_size).to(device)
             # Note that there is no need to detach from g_model because the gradient
             # will be zeroed later
             g_z = g_model(z)
@@ -195,11 +191,9 @@ if __name__ == "__main__":
 
         # Generator training loop
         for g_step in range(g_steps):
-            # --------------------------------------------------------------------------
-            # Train the generator on fake data
-            # --------------------------------------------------------------------------
+            # Train the generator on fake data:
             # 1. Get data sampled from the uniform distribution
-            z = sample_generator(g_sample_size).to(device)
+            z = noise_sample(g_sample_size).to(device)
 
             # 2. Forward propagation
             g_model.zero_grad()
