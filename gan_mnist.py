@@ -47,6 +47,12 @@ def imshow(tensor, title=None):
     plt.pause(0.0001)
 
 
+def save_gif(path, images, duration=30):
+    images[0].save(
+        path, save_all=True, append_images=images[1:], duration=duration, loop=0
+    )
+
+
 if __name__ == "__main__":
     # General settings
     device = "cuda"
@@ -62,6 +68,12 @@ if __name__ == "__main__":
     # Batch size for each model
     d_batch_size = 256
     g_batch_size = 256
+
+    # GIF settings
+    gif_path = "gif/gan_mnist.gif"
+    frame_duration_ms = 50
+    num_images = 16
+    images_per_row = 4
 
     # Compute the input dimension from the settings above
     g_sample_size = (g_batch_size, g_input_dim)
@@ -92,6 +104,7 @@ if __name__ == "__main__":
 
     # Noise sample to use for visualization
     test_noise = noise_sample(g_sample_size).to(device)
+    pil_grids = []
 
     for epoch in range(num_epochs):
         for batch_idx, (inputs, _) in enumerate(train_loader):
@@ -152,6 +165,8 @@ if __name__ == "__main__":
                     end="\r",
                 )
 
+        # Clear the line (assuming 80 chars is enough) and then print the epoch results
+        print(80 * " ", end="\r")
         print(
             "Epoch {}/{}\tLoss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}".format(
                 epoch, num_epochs - 1, d_loss, g_loss, D_x, D_G_z
@@ -159,5 +174,11 @@ if __name__ == "__main__":
         )
         g_z = g_model(test_noise).detach().cpu()
         g_z = g_z.view(g_batch_size, 1, 28, 28)
-        g_z_grid = torchvision.utils.make_grid(g_z[:16], nrow=4)
+        g_z_grid = torchvision.utils.make_grid(g_z[:num_images], nrow=images_per_row)
         imshow(g_z_grid)
+
+        # Transform grid (tensor) to a PIL image
+        img = transforms.functional.to_pil_image(g_z_grid)
+        pil_grids.append(img)
+
+    save_gif(gif_path, pil_grids, duration=frame_duration_ms)
