@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
@@ -14,13 +13,13 @@ def noise_sample(size):
 
 def descriminator(input_size, output_size):
     model = nn.Sequential(
-        nn.Linear(input_size, 1024),
+        nn.Linear(input_size, 240),
         nn.ReLU(),
-        nn.Linear(1024, 512),
+        nn.Dropout(0.3),
+        nn.Linear(240, 240),
         nn.ReLU(),
-        nn.Linear(512, 256),
-        nn.ReLU(),
-        nn.Linear(256, output_size),
+        nn.Dropout(0.3),
+        nn.Linear(240, output_size),
         nn.Sigmoid(),
     )
 
@@ -29,26 +28,20 @@ def descriminator(input_size, output_size):
 
 def generator(input_size, output_size):
     model = nn.Sequential(
-        nn.Linear(input_size, 256),
+        nn.Linear(input_size, 1200),
         nn.ReLU(),
-        nn.Linear(256, 512),
+        nn.Linear(1200, 1200),
         nn.ReLU(),
-        nn.Linear(512, 1024),
-        nn.ReLU(),
-        nn.Linear(1024, output_size),
-        nn.Tanh(),
+        nn.Linear(1200, output_size),
+        nn.Sigmoid(),
     )
 
     return model
 
 
-def imshow(inp, title=None):
-    inp = inp.numpy().transpose((1, 2, 0))
-    mean = 0.1307
-    std = 0.3081
-    inp = std * inp + mean
-    inp = np.clip(inp, 0, 1)
-    plt.imshow(inp)
+def imshow(tensor, title=None):
+    images = tensor.numpy().transpose((1, 2, 0))
+    plt.imshow(images)
     if title is not None:
         plt.title(title)
     plt.pause(0.0001)
@@ -60,38 +53,27 @@ if __name__ == "__main__":
     num_epochs = 200
 
     # Learning rate (d - descriminator; g - generator)
-    d_lr = 0.001
-    g_lr = 0.001
+    d_lr = 0.00015
+    g_lr = 0.00015
 
     # Input size
     g_input_dim = 100
 
     # Batch size for each model
-    d_batch_size = 100
-    g_batch_size = 100
+    d_batch_size = 256
+    g_batch_size = 256
 
     # Compute the input dimension from the settings above
     g_sample_size = (g_batch_size, g_input_dim)
 
-    tf = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Normalize((0.1307,), (0.3081,)),
-            lambda x: x.view(-1),
-        ]
-    )
+    tf = transforms.Compose([transforms.ToTensor(), lambda x: x.view(-1)])
     train_set = MNIST("../data", train=True, download=True, transform=tf)
     train_loader = DataLoader(
         train_set, batch_size=d_batch_size, shuffle=True, num_workers=4
     )
 
-    test_set = MNIST("../data", train=False, download=True, transform=tf)
-    test_loader = DataLoader(
-        test_set, batch_size=d_batch_size, shuffle=False, num_workers=4
-    )
-
     # Get a batch of training data
-    inputs, classes = next(iter(test_loader))
+    inputs, classes = next(iter(train_loader))
     d_input_dim = inputs[0].size()[0]
     d_sample_size = (d_batch_size, d_input_dim)
 
@@ -102,11 +84,14 @@ if __name__ == "__main__":
     g_model.to(device)
 
     # Optimizers for each model
-    d_optim = torch.optim.SGD(d_model.parameters(), lr=d_lr, momentum=0.5)
-    g_optim = torch.optim.SGD(g_model.parameters(), lr=g_lr, momentum=0.5)
+    d_optim = torch.optim.Adam(d_model.parameters(), lr=d_lr)
+    g_optim = torch.optim.Adam(g_model.parameters(), lr=g_lr)
 
     # Binary cross entropy loss for both models
     criterion = nn.BCELoss()
+
+    # Noise sample to use for visualization
+    test_noise = noise_sample(g_sample_size).to(device)
 
     for epoch in range(num_epochs):
         for batch_idx, (inputs, _) in enumerate(train_loader):
@@ -159,13 +144,6 @@ if __name__ == "__main__":
             g_loss.backward()
             g_optim.step()
 
-            if batch_idx % 100 == 0 or batch_idx == len(train_loader) - 1:
-                z = noise_sample(g_sample_size).to(device)
-                g_z = g_model(z).detach().cpu()
-                g_z = g_z.view(g_batch_size, 1, 28, 28)
-                g_z_grid = torchvision.utils.make_grid(g_z[:16])
-                imshow(g_z_grid)
-
             if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
                 print(
                     "Batch {}/{}\tLoss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}".format(
@@ -179,3 +157,7 @@ if __name__ == "__main__":
                 epoch, num_epochs - 1, d_loss, g_loss, D_x, D_G_z
             )
         )
+        g_z = g_model(test_noise).detach().cpu()
+        g_z = g_z.view(g_batch_size, 1, 28, 28)
+        g_z_grid = torchvision.utils.make_grid(g_z[:16], nrow=4)
+        imshow(g_z_grid)
