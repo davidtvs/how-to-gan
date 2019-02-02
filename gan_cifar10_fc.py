@@ -1,14 +1,12 @@
 import torch
 import torch.nn as nn
-import matplotlib.pyplot as plt
 from torchvision.datasets import CIFAR10
 import torchvision
 from torchvision import transforms
 from torch.utils.data import DataLoader
-
-
-def noise_sample(size):
-    return torch.randn(size, dtype=torch.float)
+import matplotlib.pyplot as plt
+from PIL import Image
+import common
 
 
 def descriminator(input_size, output_size):
@@ -39,28 +37,14 @@ def generator(input_size, output_size):
     return model
 
 
-def imshow(tensor, title=None):
-    images = tensor.numpy().transpose((1, 2, 0))
-    plt.imshow(images)
-    if title is not None:
-        plt.title(title)
-    plt.pause(0.0001)
-
-
-def save_gif(path, images, duration=30):
-    images[0].save(
-        path, save_all=True, append_images=images[1:], duration=duration, loop=0
-    )
-
-
 if __name__ == "__main__":
     # General settings
     device = "cuda"
     num_epochs = 200
 
     # Learning rate (d - descriminator; g - generator)
-    d_lr = 0.00025
-    g_lr = 0.00025
+    d_lr = 0.0002
+    g_lr = 0.0002
 
     # Input size
     g_input_dim = 100
@@ -71,9 +55,12 @@ if __name__ == "__main__":
 
     # GIF settings
     gif_path = "gif/gan_cifar10_fc.gif"
-    frame_duration_ms = 50
+    frame_ms = 100
+    num_frames = 100
+    num_repeat_last = 10
     num_images = 16
-    images_per_row = 4
+    num_img_row = 4
+    figsize = (8, 8)
 
     # Compute the input dimension from the settings above
     g_sample_size = (g_batch_size, g_input_dim)
@@ -103,64 +90,39 @@ if __name__ == "__main__":
     criterion = nn.BCELoss()
 
     # Noise sample to use for visualization
-    test_noise = noise_sample(g_sample_size).to(device)
+    test_noise = common.sample_normal(g_sample_size).to(device)
+
+    # Step size in epochs to get a frame and figure initialization
+    frame_step = num_epochs // num_frames
     pil_grids = []
+    fig, ax = plt.subplots(figsize=figsize)
 
     for epoch in range(num_epochs):
         for batch_idx, (inputs, _) in enumerate(train_loader):
-            # Train the descriminator on correct data:
-            # 1. Get data sampled from the real distribution
+            # Get data sampled from the real distribution and the noise distribution
             x = inputs.to(device)
+            z = common.sample_normal(g_sample_size).to(device)
 
-            # 2. Forward propagation
-            d_model.zero_grad()
-            output = d_model(x)
-            D_x = output.mean().item()
-
-            # 3. Compute loss and gradient
-            y = torch.ones_like(output)
-            loss_real = criterion(output, y)
-            loss_real.backward()
-
-            # Train the descriminator on data from the generator:
-            # 1. Get data from the generator using noise
-            z = noise_sample(g_sample_size).to(device)
-            # Note that there is no need to detach from g_model because the gradient
-            # will be zeroed later
-            g_z = g_model(z)
-
-            # 2. Forward propagation. Can't do zero grad here, else the gradient from
-            # the real data is lost
-            output = d_model(g_z)
-            D_G_z = output.mean().item()
-
-            # 3. Compute loss and gradient
-            y = torch.zeros_like(output)
-            loss_fake = criterion(output, y)
-            loss_fake.backward()
-            d_optim.step()
-
-            d_loss = (loss_real + loss_fake).item()
+            # Train the descriminator
+            out = common.train_descriminator(x, z, d_model, g_model, criterion, d_optim)
+            ((d_real, loss_real), (d_g_noise, loss_noise)) = out
+            d_loss = loss_real + loss_noise
 
             # Train the generator on fake data:
-            # 1. Get data sampled from the uniform distribution
-            z = noise_sample(g_sample_size).to(device)
+            # Get data sampled from the noise distribution and train
+            z = common.sample_normal(g_sample_size).to(device)
+            g_loss = common.train_generator(z, d_model, g_model, criterion, g_optim)
 
-            # 2. Forward propagation
-            g_z = g_model(z)
-            g_model.zero_grad()
-            output = d_model(g_z)
-
-            # 3. Compute loss and gradient
-            y = torch.ones_like(output)
-            g_loss = criterion(output, y)
-            g_loss.backward()
-            g_optim.step()
-
+            # Print results every few batches
             if batch_idx % 10 == 0 or batch_idx == len(train_loader) - 1:
                 print(
                     "Batch {}/{}\tLoss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}".format(
-                        batch_idx, len(train_loader) - 1, d_loss, g_loss, D_x, D_G_z
+                        batch_idx,
+                        len(train_loader) - 1,
+                        d_loss,
+                        g_loss,
+                        d_real,
+                        d_g_noise,
                     ),
                     end="\r",
                 )
@@ -169,16 +131,27 @@ if __name__ == "__main__":
         print(80 * " ", end="\r")
         print(
             "Epoch {}/{}\tLoss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}".format(
-                epoch, num_epochs - 1, d_loss, g_loss, D_x, D_G_z
+                epoch, num_epochs - 1, d_loss, g_loss, d_real, d_g_noise
             )
         )
-        g_z = g_model(test_noise).detach().cpu()
-        g_z = g_z.view(g_batch_size, 3, 32, 32)
-        g_z_grid = torchvision.utils.make_grid(g_z[:num_images], nrow=images_per_row)
-        imshow(g_z_grid)
 
-        # Transform grid (tensor) to a PIL image
-        img = transforms.functional.to_pil_image(g_z_grid)
-        pil_grids.append(img)
+        if (epoch + 1) % frame_step == 0 or epoch + 1 == num_epochs:
+            # Display images from the generator
+            with torch.no_grad():
+                g_z = g_model(test_noise).detach().cpu()
 
-    save_gif(gif_path, pil_grids, duration=frame_duration_ms)
+            g_z = g_z.view(g_batch_size, 3, 32, 32)
+            g_z_grid = torchvision.utils.make_grid(g_z[:num_images], nrow=num_img_row)
+            g_z_grid_np = g_z_grid.numpy().transpose((1, 2, 0))
+            common.imshow(g_z_grid_np, title="Epoch " + str(epoch + 1))
+            fig.canvas.draw()
+
+            # Convert the plot to a PIL image and store it to create a GIF later
+            img = Image.frombytes(
+                "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+            )
+            pil_grids.append(img)
+
+    common.save_gif(
+        gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last
+    )
