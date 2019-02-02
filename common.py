@@ -1,8 +1,14 @@
 import torch
 import matplotlib.pyplot as plt
+import numpy as np
 
 
-def imshow(image, title=None):
+def imshow(image, title=None, mean=None, std=None):
+    if mean is not None and std is not None:
+        mean = np.array(mean)
+        std = np.array(std)
+        image = std * image + mean
+        image = np.clip(image, 0, 1)
     plt.imshow(image)
     if title is not None:
         plt.title(title)
