@@ -71,7 +71,7 @@ def init_weights(m):
 if __name__ == "__main__":
     # General settings
     device = "cuda"
-    num_epochs = 200
+    num_epochs = 10
 
     # Learning rate (d - descriminator; g - generator)
     d_lr = 0.0002
@@ -87,7 +87,7 @@ if __name__ == "__main__":
     g_batch_size = 128
 
     # GIF settings
-    gif_path = "gif/dcgan_cifar10_conv.gif"
+    gif_path = "gif/dcgan_cifar10.gif"
     frame_ms = 100
     num_frames = 100
     num_repeat_last = 10
@@ -129,10 +129,11 @@ if __name__ == "__main__":
     test_noise = common.sample_normal(g_sample_size).to(device)
 
     # Step size in epochs to get a frame and figure initialization
-    frame_step = num_epochs // num_frames
+    frame_step = (num_epochs * len(train_loader)) // num_frames
     pil_grids = []
     fig, ax = plt.subplots(figsize=figsize)
 
+    iteration = 0
     for epoch in range(num_epochs):
         for batch_idx, (inputs, _) in enumerate(train_loader):
             # Get data sampled from the real distribution and the noise distribution
@@ -163,6 +164,34 @@ if __name__ == "__main__":
                     end="\r",
                 )
 
+            if (iteration % frame_step == 0) or (
+                (epoch == num_epochs - 1) and (batch_idx == len(train_loader) - 1)
+            ):
+                # Display images from the generator
+                with torch.no_grad():
+                    g_z = g_model(test_noise).detach().cpu()
+
+                g_z = g_z.view(g_batch_size, 3, 32, 32)
+                g_z_grid = torchvision.utils.make_grid(
+                    g_z[:num_images], nrow=num_img_row
+                )
+                g_z_grid_np = g_z_grid.numpy().transpose((1, 2, 0))
+                common.imshow(
+                    g_z_grid_np,
+                    title="Iteration " + str(iteration + 1),
+                    mean=mean,
+                    std=std,
+                )
+                fig.canvas.draw()
+
+                # Convert the plot to a PIL image and store it to create a GIF later
+                img = Image.frombytes(
+                    "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
+                )
+                pil_grids.append(img)
+
+            iteration += 1
+
         # Clear the line (assuming 80 chars is enough) and then print the epoch results
         print(80 * " ", end="\r")
         print(
@@ -170,25 +199,6 @@ if __name__ == "__main__":
                 epoch, num_epochs - 1, d_loss, g_loss, d_real, d_g_noise
             )
         )
-
-        if (epoch + 1) % frame_step == 0 or epoch + 1 == num_epochs:
-            # Display images from the generator
-            with torch.no_grad():
-                g_z = g_model(test_noise).detach().cpu()
-
-            g_z = g_z.view(g_batch_size, 3, 32, 32)
-            g_z_grid = torchvision.utils.make_grid(g_z[:num_images], nrow=num_img_row)
-            g_z_grid_np = g_z_grid.numpy().transpose((1, 2, 0))
-            common.imshow(
-                g_z_grid_np, title="Epoch " + str(epoch + 1), mean=mean, std=std
-            )
-            fig.canvas.draw()
-
-            # Convert the plot to a PIL image and store it to create a GIF later
-            img = Image.frombytes(
-                "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-            )
-            pil_grids.append(img)
 
     common.save_gif(
         gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last
