@@ -1,6 +1,10 @@
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import StepLR
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy.stats import norm
+from scipy.stats.kde import gaussian_kde
 from PIL import Image
 import common
 
@@ -8,9 +12,9 @@ import common
 def descriminator(input_size, hidden_size, output_size):
     model = nn.Sequential(
         nn.Linear(input_size, hidden_size),
-        nn.ReLU(),
+        nn.LeakyReLU(0.2),
         nn.Linear(hidden_size, hidden_size),
-        nn.ReLU(),
+        nn.LeakyReLU(0.2),
         nn.Linear(hidden_size, output_size),
         nn.Sigmoid(),
     )
@@ -30,7 +34,7 @@ def generator(input_size, hidden_size, output_size):
     return model
 
 
-def plot_hist(real_samples, gen_samples, title=None, nbins=20):
+def plot_hist(xs, normal_pdf, g_z, decision_boudnary, title=None):
     """Plots two histograms: one for the real distribution (blue) and the other for the
     learned distribution (red)
     """
@@ -39,45 +43,39 @@ def plot_hist(real_samples, gen_samples, title=None, nbins=20):
     ax.clear()
 
     # Draw the histograms
-    n, bins, _ = ax.hist(real_samples, bins=nbins, color="b", alpha=0.5)
-    ax.hist(gen_samples, bins=bins, color="r", alpha=0.5)
-
-    # Set the limits of the y-axis to a slightly larger value than the total number of
-    # samples given by the sum
-    ax.set_ylim([0, n.sum() * 1.1])
+    ax.plot(xs, normal_pdf, "--")
+    ax.plot(xs, gaussian_kde(g_z)(xs))
+    ax.plot(xs, decision_boudnary, linestyle=":")
+    ax.set_ylim([0, 1])
     if title is not None:
         plt.title(title)
-    plt.legend(["Real distribution", "Generated distribution"])
+    plt.legend(["Real (normal) distribution", "Learned distribution (G(z))", "Descriminator decision boundary"], loc="upper right")
     plt.pause(0.0001)
 
 
 if __name__ == "__main__":
     # General settings
     device = "cuda"
-    num_epochs = 5000
-    num_samples_disp = 10000
-    num_bins = 50
+    num_iter = 5000
 
     # Real data (normal distribution) settings
-    mean = 10
-    std = 2
+    mean = 4
+    std = 1.25
 
     # Learning rate (d - descriminator; g - generator)
     d_lr = 0.001
     g_lr = 0.001
-    momentum = 0.9
 
     # Number of neurons in each hidden layer
-    d_hidden_size = 25
-    g_hidden_size = 10
+    d_hidden_size = 64
+    g_hidden_size = 32
 
     # Number of iterations for each model in a single epoch
     d_steps = 1
     g_steps = 1
 
     # Batch size for each model
-    d_batch_size = 256
-    g_batch_size = 256
+    batch_size = 1024
 
     # GIF settings
     gif_path = "gif/gan_normal.gif"
@@ -87,8 +85,7 @@ if __name__ == "__main__":
     figsize = (8, 8)
 
     # Compute the input dimension from the settings above
-    d_sample_size = (d_batch_size, 1)
-    g_sample_size = (g_batch_size, 1)
+    sample_size = (batch_size, 1)
 
     # Initialize descriminator and generator models
     d_model = descriminator(1, d_hidden_size, 1)
@@ -97,28 +94,37 @@ if __name__ == "__main__":
     g_model.to(device)
 
     # Optimizers for each model
-    d_optim = torch.optim.SGD(d_model.parameters(), lr=d_lr, momentum=momentum)
-    g_optim = torch.optim.SGD(g_model.parameters(), lr=g_lr, momentum=momentum)
+    d_optim = torch.optim.Adam(d_model.parameters(), lr=d_lr, betas=(0.5, 0.999))
+    d_scheduler = StepLR(d_optim, step_size=2000, gamma=0.5)
+    g_optim = torch.optim.Adam(g_model.parameters(), lr=g_lr, betas=(0.5, 0.999))
+    g_scheduler = StepLR(g_optim, step_size=2000, gamma=0.5)
 
     # Binary cross entropy loss for both models
     criterion = nn.BCELoss()
 
-    # Real and noise samples to use for visualization
-    disp_size = (num_samples_disp, 1)
-    x_disp = common.sample_normal(disp_size, mean=mean, std=std).numpy()
-    z_disp = common.sample_uniform(disp_size).to(device)
+    # Get the normal distribution probability density function in the relevant interval
+    xs_test = np.linspace(mean - 3 * std, mean + 3 * std, batch_size)
+    x_test = norm.pdf(xs_test, mean, std)
+
+    # xs_test needs to be converted to a tensor get the descriminator's decision
+    # boundary. Also need noise samples to test the generator
+    xs_test = torch.tensor(xs_test, dtype=torch.float, device=device).unsqueeze(-1)
+    z_test = common.sample_uniform(sample_size).to(device)
 
     # Step size in epochs to get a frame and figure initialization
-    frame_step = num_epochs // num_frames
+    frame_step = num_iter // num_frames
     fig, ax = plt.subplots(figsize=figsize)
     pil_images = []
 
-    for epoch in range(num_epochs):
+    for iteration in range(num_iter):
         # Descriminator training loop - generally, d_steps = 1
         for d_step in range(d_steps):
+            d_scheduler.step()
+            g_scheduler.step()
+
             # Get data sampled from the real distribution and the noise distribution
-            x = common.sample_normal(d_sample_size, mean=mean, std=std).to(device)
-            z = common.sample_uniform(g_sample_size).to(device)
+            x = common.sample_normal(sample_size, mean=mean, std=std).to(device)
+            z = common.sample_uniform(sample_size).to(device)
 
             # Train the descriminator
             out = common.train_descriminator(x, z, d_model, g_model, criterion, d_optim)
@@ -128,30 +134,30 @@ if __name__ == "__main__":
         # Generator training loop
         for g_step in range(g_steps):
             # Get data sampled from the noise distribution and train
-            z = common.sample_uniform(g_sample_size).to(device)
+            z = common.sample_uniform(sample_size).to(device)
             g_loss = common.train_generator(z, d_model, g_model, criterion, g_optim)
 
         print(
             "Epoch {}/{}\tLoss_D: {:.4f} Loss_G: {:.4f} D(x): {:.4f} D(G(z)): {:.4f}".format(
-                epoch, num_epochs - 1, d_loss, g_loss, d_real, d_g_noise
+                iteration, num_iter - 1, d_loss, g_loss, d_real, d_g_noise
             )
         )
 
-        if (epoch + 1) % frame_step == 0 or epoch + 1 == num_epochs:
+        if iteration % frame_step == 0 or iteration == num_iter - 1:
             # Display the real distribution and the the distribution learned by the
             # generator
             with torch.no_grad():
-                g_z_disp = g_model(z_disp).detach()
-            g_z_disp = g_z_disp.cpu().numpy()
-            plot_hist(x_disp, g_z_disp, title="Epoch " + str(epoch + 1), nbins=num_bins)
+                boundary = d_model(xs_test).detach()
+                g_z_test = g_model(z_test).detach()
+
+            xs_np = xs_test.cpu().flatten().numpy()
+            boundary = boundary.cpu().flatten().numpy()
+            g_z_test = g_z_test.cpu().flatten().numpy()
+            plot_hist(xs_np, x_test, g_z_test, boundary, title="Iteration " + str(iteration + 1))
             fig.canvas.draw()
 
             # Convert the plot to a PIL image and store it to create a GIF later
-            img = Image.frombytes(
-                "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-            )
+            img = Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
             pil_images.append(img)
 
-    common.save_gif(
-        gif_path, pil_images, duration=frame_ms, num_repeat_last=num_repeat_last
-    )
+    common.save_gif(gif_path, pil_images, duration=frame_ms, num_repeat_last=num_repeat_last)
