@@ -76,7 +76,7 @@ if __name__ == "__main__":
     num_repeat_last = 10
     num_images = 16
     num_img_row = 4
-    figsize = (8, 8)
+    figsize = (4.8, 4.8)
 
     # Compute the input dimension from the settings above
     g_sample_size = (g_batch_size, g_input_dim)

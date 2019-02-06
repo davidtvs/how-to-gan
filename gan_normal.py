@@ -82,7 +82,7 @@ if __name__ == "__main__":
     frame_ms = 100
     num_frames = 100
     num_repeat_last = 10
-    figsize = (8, 8)
+    figsize = (4.8, 4.8)
 
     # Compute the input dimension from the settings above
     sample_size = (batch_size, 1)
