@@ -17,9 +17,7 @@ def imshow(image, title=None, mean=None, std=None):
 
 def save_gif(path, images, duration=30, num_repeat_last=1):
     images.extend([images[-1]] * num_repeat_last)
-    images[0].save(
-        path, save_all=True, append_images=images[1:], duration=duration, loop=0
-    )
+    images[0].save(path, save_all=True, append_images=images[1:], duration=duration, loop=0)
 
 
 def sample_normal(size, mean=0, std=1):

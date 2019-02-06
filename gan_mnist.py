@@ -67,9 +67,7 @@ if __name__ == "__main__":
 
     tf = transforms.Compose([transforms.ToTensor(), lambda x: x.view(-1)])
     train_set = MNIST("../data", train=True, download=True, transform=tf)
-    train_loader = DataLoader(
-        train_set, batch_size=d_batch_size, shuffle=True, num_workers=4
-    )
+    train_loader = DataLoader(train_set, batch_size=d_batch_size, shuffle=True, num_workers=4)
 
     # Get a batch of training data
     inputs, classes = next(iter(train_loader))
@@ -135,7 +133,7 @@ if __name__ == "__main__":
             )
         )
 
-        if (epoch + 1) % frame_step == 0 or epoch + 1 == num_epochs:
+        if epoch % frame_step == 0 or epoch + 1 == num_epochs:
             # Display images from the generator
             with torch.no_grad():
                 g_z = g_model(test_noise).detach().cpu()
@@ -147,11 +145,7 @@ if __name__ == "__main__":
             fig.canvas.draw()
 
             # Convert the plot to a PIL image and store it to create a GIF later
-            img = Image.frombytes(
-                "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-            )
+            img = Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
             pil_grids.append(img)
 
-    common.save_gif(
-        gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last
-    )
+    common.save_gif(gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last)

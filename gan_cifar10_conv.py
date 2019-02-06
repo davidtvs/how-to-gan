@@ -41,9 +41,7 @@ class Generator(nn.Module):
         super().__init__()
         self.fc0 = nn.Sequential(nn.Linear(input_size, 8000), nn.ReLU())
         self.fc1 = nn.Sequential(nn.Linear(8000, 8000), nn.ReLU())
-        self.tconv0 = nn.ConvTranspose2d(
-            80, 3, 5, stride=3, padding=0, output_padding=0
-        )
+        self.tconv0 = nn.ConvTranspose2d(80, 3, 5, stride=3, padding=0, output_padding=0)
         self.out_fn = nn.Sigmoid()
 
     def forward(self, x):
@@ -85,9 +83,7 @@ if __name__ == "__main__":
 
     tf = transforms.ToTensor()
     train_set = CIFAR10("../data", train=True, download=True, transform=tf)
-    train_loader = DataLoader(
-        train_set, batch_size=d_batch_size, shuffle=True, num_workers=4
-    )
+    train_loader = DataLoader(train_set, batch_size=d_batch_size, shuffle=True, num_workers=4)
 
     # Get a batch of training data
     inputs, classes = next(iter(train_loader))
@@ -153,7 +149,7 @@ if __name__ == "__main__":
             )
         )
 
-        if (epoch + 1) % frame_step == 0 or epoch + 1 == num_epochs:
+        if epoch % frame_step == 0 or epoch + 1 == num_epochs:
             # Display images from the generator
             with torch.no_grad():
                 g_z = g_model(test_noise).detach().cpu()
@@ -165,11 +161,7 @@ if __name__ == "__main__":
             fig.canvas.draw()
 
             # Convert the plot to a PIL image and store it to create a GIF later
-            img = Image.frombytes(
-                "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-            )
+            img = Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
             pil_grids.append(img)
 
-    common.save_gif(
-        gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last
-    )
+    common.save_gif(gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last)

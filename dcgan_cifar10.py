@@ -39,20 +39,11 @@ def generator(ninput_channels, nbase_channels=128):
         nn.ReLU(),
         nn.BatchNorm2d(4 * nbase_channels),
         # 4x4x512
-        nn.ConvTranspose2d(
-            4 * nbase_channels,
-            2 * nbase_channels,
-            3,
-            stride=2,
-            padding=1,
-            output_padding=1,
-        ),
+        nn.ConvTranspose2d(4 * nbase_channels, 2 * nbase_channels, 3, stride=2, padding=1, output_padding=1),
         nn.ReLU(),
         nn.BatchNorm2d(2 * nbase_channels),
         # 8x8x256
-        nn.ConvTranspose2d(
-            2 * nbase_channels, nbase_channels, 3, stride=2, padding=1, output_padding=1
-        ),
+        nn.ConvTranspose2d(2 * nbase_channels, nbase_channels, 3, stride=2, padding=1, output_padding=1),
         nn.ReLU(),
         nn.BatchNorm2d(nbase_channels),
         # 16x16x128
@@ -103,9 +94,7 @@ if __name__ == "__main__":
 
     tf = transforms.Compose([transforms.ToTensor(), transforms.Normalize(mean, std)])
     train_set = CIFAR10("../data", train=True, download=True, transform=tf)
-    train_loader = DataLoader(
-        train_set, batch_size=d_batch_size, shuffle=True, num_workers=4
-    )
+    train_loader = DataLoader(train_set, batch_size=d_batch_size, shuffle=True, num_workers=4)
 
     # Get a batch of training data
     inputs, classes = next(iter(train_loader))
@@ -164,30 +153,19 @@ if __name__ == "__main__":
                     end="\r",
                 )
 
-            if (iteration % frame_step == 0) or (
-                (epoch == num_epochs - 1) and (batch_idx == len(train_loader) - 1)
-            ):
+            if iteration % frame_step == 0 or (epoch == num_epochs - 1 and batch_idx == len(train_loader) - 1):
                 # Display images from the generator
                 with torch.no_grad():
                     g_z = g_model(test_noise).detach().cpu()
 
                 g_z = g_z.view(g_batch_size, 3, 32, 32)
-                g_z_grid = torchvision.utils.make_grid(
-                    g_z[:num_images], nrow=num_img_row
-                )
+                g_z_grid = torchvision.utils.make_grid(g_z[:num_images], nrow=num_img_row)
                 g_z_grid_np = g_z_grid.numpy().transpose((1, 2, 0))
-                common.imshow(
-                    g_z_grid_np,
-                    title="Iteration " + str(iteration + 1),
-                    mean=mean,
-                    std=std,
-                )
+                common.imshow(g_z_grid_np, title="Iteration " + str(iteration + 1), mean=mean, std=std)
                 fig.canvas.draw()
 
                 # Convert the plot to a PIL image and store it to create a GIF later
-                img = Image.frombytes(
-                    "RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb()
-                )
+                img = Image.frombytes("RGB", fig.canvas.get_width_height(), fig.canvas.tostring_rgb())
                 pil_grids.append(img)
 
             iteration += 1
@@ -200,6 +178,4 @@ if __name__ == "__main__":
             )
         )
 
-    common.save_gif(
-        gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last
-    )
+    common.save_gif(gif_path, pil_grids, duration=frame_ms, num_repeat_last=num_repeat_last)
